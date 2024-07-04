@@ -43,4 +43,9 @@ class GPT : public torch::nn::Module{
             // logits, shape (B, T, vocab_size)
             return lm_head->forward(x);
         }
+
+        std::vector<std::vector<uint64_t>> inference(const std::vector<uint64_t>& token_encodings, 
+                                                     const int num_return_sequences, 
+                                                     const int max_generation_length, 
+                                                     const torch::Device& device);
 };

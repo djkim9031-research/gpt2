@@ -8,7 +8,7 @@
  
 namespace utils{
     // Extract the layer index from "h.layer_idx" form in hugging face weight pt file.
-    int extract_layer_num(const std::string& input_string) {
+    inline int extract_layer_num(const std::string& input_string) {
         // Define a regular expression to find the integer after "h."
         std::regex regex_pattern("h\\.([0-9]+)\\.");
 
@@ -31,13 +31,19 @@ namespace utils{
     }
 
     // Helper function to check if a string ends with a specific suffix
-    bool ends_with(const std::string& fullString, const std::string& ending) {
+    inline bool ends_with(const std::string& fullString, const std::string& ending) {
         if (fullString.length() >= ending.length()) {
             return (fullString.substr(fullString.length() - ending.length()) == ending);
         } else {
             return false;
         }
     }
+}
+
+// Set seed function for reproduciblity.
+inline void set_seed(int seed_num){
+    torch::manual_seed(seed_num);
+    torch::cuda::manual_seed(seed_num);
 }
 
 // Load the pretrained GPT model weights (downloaded from HuggingFace)
