@@ -124,6 +124,20 @@ class Transformer : public torch::nn::Module {
         }
 
         torch::Tensor forward(torch::Tensor x){
-            return attn_blocks->forward(x);
+            // x shape B, T(token length)
+            auto sizes = x.sizes();
+            int B = sizes[0];
+            int T = sizes[1];
+
+            auto positions = torch::arange(0, T, torch::kLong).to(x.device()); // T
+            auto pos_embeddings = position_embedding->forward(positions); // T, embedding_dims
+            auto tok_embeddings = token_embedding->forward(x); // B, T, embedding_dims
+            x = tok_embeddings + pos_embeddings;
+
+            // Attention blocks
+            x = attn_blocks->forward(x); // B, T, embedding_dims
+
+            // Final layer norm
+            return layer_norm->forward(x);
         }
 };

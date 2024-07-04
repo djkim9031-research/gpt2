@@ -39,6 +39,8 @@ class GPT : public torch::nn::Module{
         }
 
         torch::Tensor forward(torch::Tensor x){
-            return transformer->forward(x);
+            x = transformer->forward(x);
+            // logits, shape (B, T, vocab_size)
+            return lm_head->forward(x);
         }
 };
