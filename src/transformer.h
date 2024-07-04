@@ -7,7 +7,7 @@
 class CausalSelfAttention : public torch::nn::Module {
     // Multihead causal self attention (masked attention) in the transformer decoder
     public:
-        torch::nn::Linear c_attn{nullptr}; //query, key, value projections
+        torch::nn::Linear c_qkv{nullptr}; //query, key, value projections
         torch::nn::Linear c_proj{nullptr}; //output projections
         int n_heads;
         int n_embs;
@@ -16,7 +16,7 @@ class CausalSelfAttention : public torch::nn::Module {
         CausalSelfAttention(int context_window_size, int embedding_dims, int n_heads, float dropout_prob, int seed_num)
             : n_heads(n_heads), n_embs(embedding_dims){
             torch::manual_seed(seed_num);
-            c_attn = register_module("c_attn", torch::nn::Linear(embedding_dims, 3*embedding_dims));
+            c_qkv = register_module("c_qkv", torch::nn::Linear(embedding_dims, 3*embedding_dims));
             c_proj = register_module("c_proj", torch::nn::Linear(embedding_dims, embedding_dims));
             bias = register_buffer("bias", torch::tril(torch::ones({context_window_size, context_window_size})).view({1, 1, context_window_size, context_window_size}));
         }
@@ -28,7 +28,7 @@ class CausalSelfAttention : public torch::nn::Module {
             int C = sizes[2]; // embedding dimension
 
             // Calculate querys, keys, values for all heads in batch
-            auto qkv = c_attn->forward(x);
+            auto qkv = c_qkv->forward(x);
             auto q = qkv.slice(/*dim=*/2, /*start idx=*/0, /*end idx=*/n_embs).contiguous();
             auto k = qkv.slice(/*dim=*/2, /*start idx=*/n_embs, /*end idx=*/2*n_embs).contiguous();
             auto v = qkv.slice(/*dim=*/2, /*start idx=*/2*n_embs, /*end idx=*/3*n_embs).contiguous();
@@ -57,20 +57,22 @@ class CausalSelfAttention : public torch::nn::Module {
 class MLP : public torch::nn::Module {
     // Feedforward network in the transformer
     public:
-        torch::nn::Sequential net{nullptr};
+        torch::nn::Linear c_fc{nullptr};
+        torch::nn::GELU gelu{nullptr};
+        torch::nn::Linear c_proj{nullptr};
 
         MLP(int embedding_dims, float dropout_prob, int seed_num){
             torch::manual_seed(seed_num);
-            net = register_module("MLP", torch::nn::Sequential(
-                // From the original paper, the inner layer has a multiplier of 4
-                torch::nn::Linear(embedding_dims, 4*embedding_dims),
-                torch::nn::GELU(torch::nn::GELUOptions().approximate("tanh")),
-                torch::nn::Linear(4*embedding_dims, embedding_dims)
-            ));
+            // From the original paper, the inner layer has a multiplier of 4
+            c_fc = register_module("c_fc", torch::nn::Linear(embedding_dims, 4*embedding_dims));
+            gelu = register_module("gelu", torch::nn::GELU(torch::nn::GELUOptions().approximate("tanh")));
+            c_proj = register_module("c_proj", torch::nn::Linear(4*embedding_dims, embedding_dims));
         }
 
         torch::Tensor forward(torch::Tensor x){
-            return net->forward(x);
+            x = c_fc->forward(x);
+            x = gelu->forward(x);
+            return c_proj->forward(x);
         }
 };
 

@@ -1,3 +1,4 @@
+#pragma once
 #include <torch/torch.h>
 #include <cmath>
 #include <memory>
@@ -12,7 +13,7 @@ struct GPTConfig{
     int n_heads;
     int n_embs;
 
-    GPTConfig(int context_win_size = 256, int vocab_size = 65, int n_layers = 6, int n_heads = 6, int n_embs = 384)
+    GPTConfig(int context_win_size = 1024, int vocab_size = 50257, int n_layers = 12, int n_heads = 12, int n_embs = 768)
         : context_win_size(context_win_size), 
           vocab_size(vocab_size),
           n_layers(n_layers),
