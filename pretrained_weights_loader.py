@@ -21,6 +21,6 @@ def save_gpt2_weights(model_type='gpt2'):
     
     # Trace the wrapper model with the example input
     traced_script_module = torch.jit.trace(wrapped_model, example_input)
-    traced_script_module.save(f"{model_type}_weights.pt")
+    traced_script_module.save(f"./data/{model_type}_weights.pt")
 
 save_gpt2_weights('gpt2')
