@@ -36,4 +36,8 @@ class GPT : public torch::nn::Module{
                                                                                        config.n_layers));
             lm_head = register_module("linear_head", torch::nn::Linear(torch::nn::LinearOptions(config.n_embs, config.vocab_size).bias(false)));
         }
+
+        torch::Tensor forward(torch::Tensor x){
+            return transformer->forward(x);
+        }
 };
