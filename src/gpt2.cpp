@@ -66,3 +66,45 @@ std::vector<std::vector<uint64_t>> GPT::inference(const std::vector<uint64_t>& t
     }
     return generated_tokens;
 }
+
+
+void GPT_playground(std::string tiktoken_conf, std::string input_string, int target_sequence_length, int num_output_variants){
+
+    // Encode the input language string to tiktoken encodings.
+    std::vector<uint64_t> tokens;
+    sw::tokenizer::TiktokenFactory tiktoken_factory(tiktoken_conf);
+    auto tiktoken = tiktoken_factory.create("p50k_base");
+
+    // Encoding sanity check
+    if (tiktoken.decode(tiktoken.encode(input_string)) != input_string) {
+        std::cerr << "failed to test tiktoken encode and decode" << std::endl;
+        return;
+    }
+
+    tokens = tiktoken.encode(input_string);
+
+    // Identify if GPU is available.
+    torch::DeviceType device_type = torch::cuda::is_available() ? torch::kCUDA : torch::kCPU;
+    torch::Device run_device(device_type);
+
+    // Construct the GPT2 model.
+    GPTConfig config;
+    GPT model(config);
+    model.to(run_device);
+
+    // Load the pretrained weights.
+    // I will update this logic to load weights that are custom trained.
+    load_from_pretrained_GPT2_HF(model, "../data/gpt2_weights.pt");
+
+    // GPT2 model inference
+    std::vector<std::vector<uint64_t>> generated_tokens = model.inference(tokens, num_output_variants, target_sequence_length, run_device);
+
+    // Decode the generated tokens, and print the outputs.
+    std::cout<<"_________________________________________________________________________________________"<<std::endl;
+    for(int i=0; i<num_output_variants; ++i){
+        std::cout<<"[GENERATED] "<<tiktoken.decode(generated_tokens[i])<<std::endl;
+        std::cout<<"_________________________________________________________________________________________"<<std::endl;
+    }
+
+    return;
+}

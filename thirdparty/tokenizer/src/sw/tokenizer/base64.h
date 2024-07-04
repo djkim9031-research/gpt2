@@ -36,7 +36,7 @@ inline void validate(uint32_t v) {
     }
 }
 
-void decode(const std::string_view &input, std::string &output) {
+inline void decode(const std::string_view &input, std::string &output) {
     assert(input.size() == 4);
 
     uint32_t val = 0;
@@ -66,7 +66,7 @@ void decode(const std::string_view &input, std::string &output) {
     output.push_back(static_cast<char>(val & 0xFF));
 }
 
-void decode_1_padding(const std::string_view &input, std::string &output) {
+inline void decode_1_padding(const std::string_view &input, std::string &output) {
     assert(input.size() == 3);
 
     uint32_t val = 0;
@@ -90,7 +90,7 @@ void decode_1_padding(const std::string_view &input, std::string &output) {
     output.push_back(static_cast<char>((val >> 2) & 0xFF));
 }
 
-void decode_2_padding(const std::string_view &input, std::string &output) {
+inline void decode_2_padding(const std::string_view &input, std::string &output) {
     assert(input.size() == 2);
 
     uint32_t val = 0;
