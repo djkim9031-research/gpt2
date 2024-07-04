@@ -40,8 +40,11 @@ namespace utils{
     }
 }
 
-// Load the pretrained GPT model weights (ideally downloaded from HuggingFace)
-inline void load_from_pretrained(GPT& model, const std::string& weights_path){
+// Load the pretrained GPT model weights (downloaded from HuggingFace)
+// For linear layers in the attention block (e.g., qkv, projections, mlp layers),
+// the implementation is of shape [output size, input size], whereas for HF downloaded weights 
+// have the shape [input size, output size]. So the corresponding weights need to be transposed.
+inline void load_from_pretrained_GPT2_HF(GPT& model, const std::string& weights_path){
     // Load the saved weights
     torch::jit::script::Module modules = torch::jit::load(weights_path);
     auto parameters = modules.named_parameters();
