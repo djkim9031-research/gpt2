@@ -47,6 +47,12 @@ class GPT : public torch::nn::Module{
             // Same memory address are shared, so anything backpropagated via lm_head not only propagates to wte through chain rules, but also directly
             // from lm_head.
             transformer->token_embedding->weight = lm_head->weight;
+
+            // Weight initialization
+            // apply is a function provided by torch::nn::Module.
+            apply([this](torch::nn::Module& curr_module){
+                this->_init_weights(curr_module);
+            });
         }
 
         torch::Tensor forward(torch::Tensor x){
@@ -59,6 +65,23 @@ class GPT : public torch::nn::Module{
                                                      const int num_return_sequences, 
                                                      const int max_generation_length, 
                                                      const torch::Device& device);
+
+    private:
+
+        // Weight initalization scheme
+        void _init_weights(torch::nn::Module& curr_module){
+            if(auto linear = dynamic_cast<torch::nn::LinearImpl*>(&curr_module)){
+                // zero mean, 0.02 std as GPT2 is implemented.
+                torch::nn::init::normal_(linear->weight, 0.0, 0.02);
+                if(linear->bias.defined()){
+                    torch::nn::init::zeros_(linear->bias);
+                }
+            } else if (auto embedding = dynamic_cast<torch::nn::EmbeddingImpl*>(&curr_module)){
+                // zero mean, 0.02 std as GPT2 is implemented.
+                torch::nn::init::normal_(embedding->weight, 0.0, 0.02);
+            }
+        }
+
 };
 
 // Entry function to train GPT-2 model.
