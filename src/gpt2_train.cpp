@@ -13,6 +13,7 @@ void GPT_trainer(const std::string& data_path, const std::string& tiktoken_conf,
 
     torch::DeviceType device_type = torch::cuda::is_available() ? torch::kCUDA : torch::kCPU;
     torch::Device run_device(device_type);
+    std::cout<<"[INFO]  Running on "<<device_type<<std::endl;
 
     std::unique_ptr<GPTConfig> config{nullptr};
 
@@ -32,6 +33,13 @@ void GPT_trainer(const std::string& data_path, const std::string& tiktoken_conf,
         throw std::invalid_argument(gpt_model+" does not exist. Try one of [gpt2, gpt2-medium, gpt2-large, gpt2-xl]");
     }
 
+    // Set hyperparameters
+    utils::set_seed(42);
+    int batch_size = 1;
+    int step = 1;
+    int max_steps = 10;
+    float learning_rate = 3e-4;
+
     // __________________________________________________________________________________________________________
     // Data parsing, input data tensor creation
     // __________________________________________________________________________________________________________
@@ -45,5 +53,43 @@ void GPT_trainer(const std::string& data_path, const std::string& tiktoken_conf,
     preprocessing::split_dataset(0.9, tokens, train_data, val_data);
     std::cout<<"[INFO]  Train/val set gathered."<<std::endl;
 
+    // __________________________________________________________________________________________________________
+    // GPT model construction.
+    // __________________________________________________________________________________________________________
+    GPT model(*config);
+    model.to(run_device);
+    model.train();
+
+    // Optimizer
+    torch::optim::AdamW optimizer(model.parameters(), torch::optim::AdamWOptions(learning_rate));
+
+    // __________________________________________________________________________________________________________
+    // Training loop
+    // => Make sure to set a reasonalbe batch_size. At least 8GB VRAM on CUDA device seems necessary.
+    // __________________________________________________________________________________________________________
+    std::cout<<"[INFO]  Training started....."<<std::endl;
+    std::cout<<"_________________________________________________________________________________________"<<std::endl;
+    while(step < max_steps){
+        // Create batch
+        torch::Tensor x_train, y_train;
+        preprocessing::create_batch(batch_size, config->context_win_size, train_data, x_train, y_train);
+
+        // Forward propagation
+        auto logits = model.forward(x_train);
+
+        // logits [B, T, C], y_train [B, T]
+        // loss is calculated over C dim, and B,T dims are combined.
+        auto loss = torch::nn::functional::cross_entropy(logits.view({-1, logits.size(2)}), y_train.view({-1}));
+
+        // Backward propagation
+        optimizer.zero_grad();
+        loss.backward();
+        optimizer.step();
+
+        std::cout<<"[INFO]  Step "<<step<<", loss = "<<loss.item<float>()<<std::endl;
+        step++;
+    }
+    std::cout<<"_________________________________________________________________________________________"<<std::endl;
+    std::cout<<"[INFO]  Training completed."<<std::endl;
 
 }

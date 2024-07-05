@@ -81,6 +81,7 @@ void GPT_playground(const std::string& input_string,
     // Identify if GPU is available.
     torch::DeviceType device_type = torch::cuda::is_available() ? torch::kCUDA : torch::kCPU;
     torch::Device run_device(device_type);
+    std::cout<<"[INFO]  Running on "<<device_type<<std::endl;
 
     // Construct the GPT2 model.
     std::unique_ptr<GPTConfig> config{nullptr};
@@ -100,7 +101,7 @@ void GPT_playground(const std::string& input_string,
     } else{
         throw std::invalid_argument(gpt_model+" does not exist. Try one of [gpt2, gpt2-medium, gpt2-large, gpt2-xl]");
     }
-    
+
     GPT model(*config);
     model.to(run_device);
 
