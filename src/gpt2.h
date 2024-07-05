@@ -40,6 +40,13 @@ class GPT : public torch::nn::Module{
                                                                                        config.n_heads,
                                                                                        config.n_layers));
             lm_head = register_module("linear_head", torch::nn::Linear(torch::nn::LinearOptions(config.n_embs, config.vocab_size).bias(false)));
+
+            // Weight sharing (initial token embedding and topmost head layer)
+            // The idea is that similar tokens in embedding space should have similar weights contributions (adopted in the original Attention paper).
+            // At the top head layer, when tokens are predicted, same weight conribitutions should happen as did in the early token embedding stage.
+            // Same memory address are shared, so anything backpropagated via lm_head not only propagates to wte through chain rules, but also directly
+            // from lm_head.
+            transformer->token_embedding->weight = lm_head->weight;
         }
 
         torch::Tensor forward(torch::Tensor x){
