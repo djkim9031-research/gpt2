@@ -66,7 +66,11 @@ std::vector<std::vector<uint64_t>> GPT::inference(const std::vector<int64_t>& to
 }
 
 
-void GPT_playground(const std::string& input_string, const std::string& tiktoken_conf, int target_sequence_length, int num_output_variants){
+void GPT_playground(const std::string& input_string, 
+                    const std::string& tiktoken_conf, 
+                    const int target_sequence_length, 
+                    const int num_output_variants,
+                    const std::string& gpt_model){
 
     // Instantiate tiktoken tokenizer.
     tokenizer::tiktoken tokenizer(tiktoken_conf);
@@ -79,8 +83,25 @@ void GPT_playground(const std::string& input_string, const std::string& tiktoken
     torch::Device run_device(device_type);
 
     // Construct the GPT2 model.
-    GPTConfig config;
-    GPT model(config);
+    std::unique_ptr<GPTConfig> config{nullptr};
+
+    if(gpt_model == "gpt2"){
+        config = std::make_unique<GPTConfig>(1024, 50257, 12, 12, 768); // 124M params
+        std::cout<<"[INFO]  GPT2 model config generated."<<std::endl;
+    } else if (gpt_model == "gpt2-medium"){
+        config = std::make_unique<GPTConfig>(1024, 50257, 24, 16, 1024); // 350M params
+        std::cout<<"[INFO]  GPT2-medium model config generated."<<std::endl;
+    } else if (gpt_model == "gpt2-large"){
+        config = std::make_unique<GPTConfig>(1024, 50257, 36, 20, 1280); // 774M params
+        std::cout<<"[INFO]  GPT2-large model config generated."<<std::endl;
+    } else if (gpt_model == "gpt2-xl"){
+        config = std::make_unique<GPTConfig>(1024, 50257, 48, 25, 1600); // 1.558B params
+        std::cout<<"[INFO]  GPT2-xl model config generated."<<std::endl;
+    } else{
+        throw std::invalid_argument(gpt_model+" does not exist. Try one of [gpt2, gpt2-medium, gpt2-large, gpt2-xl]");
+    }
+    
+    GPT model(*config);
     model.to(run_device);
 
     // Load the pretrained weights.

@@ -54,6 +54,12 @@ class GPT : public torch::nn::Module{
                                                      const torch::Device& device);
 };
 
+// Entry function to train GPT-2 model.
+// @param data_path                 Path to input data.
+// @param tiktoken_conf             Path to where tiktoken conf file is.
+// @param gpt_model                 GPT model variants [gpt2, gpt2-medium, gpt2-large, gpt2-xl]
+void GPT_trainer(const std::string& data_path, const std::string& tiktoken_conf, const std::string& gpt_model = "gpt2");
+
 
 // Entry function to load the pretrained GPT-2 model,
 // and generate language sequence(s) based on a given input sequence.
@@ -63,5 +69,10 @@ class GPT : public torch::nn::Module{
 // @param target_sequence_length    Target number of tokens in the output language sequence.
 //                                  (i.e., if the input string is long, generated words will be shorter)
 // @param num_output_variants       Number of output sequences to generate given the input sequence.
+// @param gpt_model                 GPT model variants [gpt2, gpt2-medium, gpt2-large, gpt2-xl]
 //
-void GPT_playground(const std::string& input_string, const std::string& tiktoken_conf, int target_sequence_length, int num_output_variants);
+void GPT_playground(const std::string& input_string, 
+                    const std::string& tiktoken_conf, 
+                    const int target_sequence_length, 
+                    const int num_output_variants, 
+                    const std::string& gpt_model = "gpt2");
