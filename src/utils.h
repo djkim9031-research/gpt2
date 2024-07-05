@@ -49,7 +49,9 @@ namespace utils {
     // Set seed function for reproduciblity.
     inline void set_seed(int seed_num){
         torch::manual_seed(seed_num);
-        torch::cuda::manual_seed(seed_num);
+        if(torch::cuda::is_available()){
+            torch::cuda::manual_seed(seed_num);
+        }
     }
 }
 

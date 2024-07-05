@@ -49,10 +49,11 @@ class GPT : public torch::nn::Module{
             transformer->token_embedding->weight = lm_head->weight;
 
             // Weight initialization
-            // apply is a function provided by torch::nn::Module.
-            apply([this](torch::nn::Module& curr_module){
-                this->_init_weights(curr_module);
-            });
+            for(const auto& named_module : this->named_children()){ // transformer and linear_head
+                for(const auto& curr_module : named_module.value()->named_modules()){ // Each module under transformer, and linear_head
+                    _init_weights(*(curr_module.value()), curr_module.key().c_str());
+                }
+            }
         }
 
         torch::Tensor forward(torch::Tensor x){
@@ -69,18 +70,7 @@ class GPT : public torch::nn::Module{
     private:
 
         // Weight initalization scheme
-        void _init_weights(torch::nn::Module& curr_module){
-            if(auto linear = dynamic_cast<torch::nn::LinearImpl*>(&curr_module)){
-                // zero mean, 0.02 std as GPT2 is implemented.
-                torch::nn::init::normal_(linear->weight, 0.0, 0.02);
-                if(linear->bias.defined()){
-                    torch::nn::init::zeros_(linear->bias);
-                }
-            } else if (auto embedding = dynamic_cast<torch::nn::EmbeddingImpl*>(&curr_module)){
-                // zero mean, 0.02 std as GPT2 is implemented.
-                torch::nn::init::normal_(embedding->weight, 0.0, 0.02);
-            }
-        }
+        void _init_weights(torch::nn::Module& curr_module, const std::string& curr_module_name);
 
 };
 

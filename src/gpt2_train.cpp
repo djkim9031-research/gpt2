@@ -1,6 +1,24 @@
 #include "gpt2.h"
 #include "utils.h"
 
+void GPT::_init_weights(torch::nn::Module& curr_module, const std::string& curr_module_name){
+    if(auto linear = dynamic_cast<torch::nn::LinearImpl*>(&curr_module)){
+            float std = 0.02;
+            if(utils::ends_with(curr_module_name, "c_proj")){
+                std *= 1/std::sqrt(2*(this->config.n_layers));
+            }
+            // zero mean, 0.02 std for linear layers, but for proj layers, normalize it with
+            // multipler 1/sqrt(2*n_layers) to mitigate the expansion of std from residual connections.
+            torch::nn::init::normal_(linear->weight, 0.0, std);
+            if(linear->bias.defined()){
+                torch::nn::init::zeros_(linear->bias);
+            }
+        } else if (auto embedding = dynamic_cast<torch::nn::EmbeddingImpl*>(&curr_module)){
+            // zero mean, 0.02 std as GPT2 is implemented.
+            torch::nn::init::normal_(embedding->weight, 0.0, 0.02);
+        }
+}
+
 void GPT_trainer(const std::string& data_path, const std::string& tiktoken_conf, const std::string& gpt_model){
 
     // __________________________________________________________________________________________________________
