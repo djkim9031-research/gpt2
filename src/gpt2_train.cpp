@@ -61,6 +61,9 @@ void GPT_trainer(const std::string& data_path, const std::string& tiktoken_conf,
     int step = 1;
     int max_steps = 10;
     float learning_rate = 3e-4;
+    float beta1 = 0.9;
+    float beta2 = 0.95;
+    float eps = 1e-8;
     float num_tokens = batch_size * config->context_win_size;
 
     // __________________________________________________________________________________________________________
@@ -84,8 +87,7 @@ void GPT_trainer(const std::string& data_path, const std::string& tiktoken_conf,
     model.train();
 
     // Optimizer
-    torch::optim::AdamW optimizer(model.parameters(), torch::optim::AdamWOptions(learning_rate));
-
+    torch::optim::AdamW optimizer(model.parameters(), torch::optim::AdamWOptions(learning_rate).betas({beta1, beta2}).eps(eps));
 
     // __________________________________________________________________________________________________________
     // Training loop
@@ -124,6 +126,8 @@ void GPT_trainer(const std::string& data_path, const std::string& tiktoken_conf,
         // Backward propagation
         optimizer.zero_grad();
         loss.backward();
+        // global grad norm clipping at 1.0
+        torch::nn::utils::clip_grad_norm_(model.parameters(), 1.0);
         optimizer.step();
 
         if(torch::cuda::is_available()){
