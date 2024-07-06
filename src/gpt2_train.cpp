@@ -1,6 +1,9 @@
 #include "gpt2.h"
 #include "utils.h"
 
+#include <chrono>
+#include <ATen/autocast_mode.h>
+
 void GPT::_init_weights(torch::nn::Module& curr_module, const std::string& curr_module_name){
     if(auto linear = dynamic_cast<torch::nn::LinearImpl*>(&curr_module)){
             float std = 0.02;
@@ -57,6 +60,7 @@ void GPT_trainer(const std::string& data_path, const std::string& tiktoken_conf,
     int step = 1;
     int max_steps = 10;
     float learning_rate = 3e-4;
+    float num_tokens = batch_size * config->context_win_size;
 
     // __________________________________________________________________________________________________________
     // Data parsing, input data tensor creation
@@ -88,13 +92,17 @@ void GPT_trainer(const std::string& data_path, const std::string& tiktoken_conf,
     std::cout<<"[INFO]  Training started....."<<std::endl;
     std::cout<<"_________________________________________________________________________________________"<<std::endl;
     while(step < max_steps){
+        auto t0 = std::chrono::high_resolution_clock::now();
+
         // Create batch
         torch::Tensor x_train, y_train;
         preprocessing::create_batch(batch_size, config->context_win_size, train_data, x_train, y_train);
 
-        // Forward propagation
+        // Forward propagation, with automatic mixed precision for speed gain.
+        at::autocast::set_enabled(true);
         auto logits = model.forward(x_train);
-
+        at::autocast::clear_cache();
+        at::autocast::set_enabled(false);
         // logits [B, T, C], y_train [B, T]
         // loss is calculated over C dim, and B,T dims are combined.
         auto loss = torch::nn::functional::cross_entropy(logits.view({-1, logits.size(2)}), y_train.view({-1}));
@@ -104,7 +112,15 @@ void GPT_trainer(const std::string& data_path, const std::string& tiktoken_conf,
         loss.backward();
         optimizer.step();
 
-        std::cout<<"[INFO]  Step "<<step<<", loss = "<<loss.item<float>()<<std::endl;
+        if(torch::cuda::is_available()){
+            torch::cuda::synchronize();
+        }
+        auto t1 = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<float, std::milli> elapsed = t1 - t0;
+        float duration = elapsed.count();
+
+        std::cout<<"[INFO]  Step "<<step<<", loss = "<<loss.item<float>()<<", Elapsed = "<<duration<<
+                   "(ms), Processed tokens = "<<num_tokens/(duration/1000)<<"(tok/sec)"<<std::endl;
         step++;
     }
     std::cout<<"_________________________________________________________________________________________"<<std::endl;
