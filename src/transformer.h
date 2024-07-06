@@ -61,9 +61,6 @@ class CausalSelfAttention : public torch::nn::Module {
             return c_proj->forward(y);
         }
 
-    private: 
-        c10::optional<at::Tensor> _opt = torch::nullopt;
-
 };
 
 class MLP : public torch::nn::Module {
