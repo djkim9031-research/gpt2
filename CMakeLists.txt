@@ -17,6 +17,10 @@ link_directories(${CUDA_LIBRARIES})
 # Find the libtorch package
 find_package(Torch REQUIRED)
 
+# Find MPI package
+find_package(MPI REQUIRED)
+include_directories(SYSTEM ${MPI_C_INCLUDE_PATH} ${MPI_CXX_INCLUDE_PATH})
+
 # Find the re2 package
 find_package(re2 REQUIRED)
 
@@ -29,4 +33,4 @@ file(GLOB_RECURSE SOURCES "src/*.cpp")
 add_executable(gpt2 ${SOURCES})
 
 # Link libraries
-target_link_libraries(gpt2 ${CUDA_LIBRARIES} "${TORCH_LIBRARIES}" re2::re2)
+target_link_libraries(gpt2 ${CUDA_LIBRARIES} "${TORCH_LIBRARIES}" re2::re2 ${MPI_LIBRARIES})
