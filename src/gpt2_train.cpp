@@ -1,5 +1,6 @@
 #include "gpt2.h"
 #include "utils.h"
+#include <cassert>
 
 #include <chrono>
 #include <ATen/autocast_mode.h>
@@ -117,6 +118,7 @@ void GPT_trainer(const std::string& data_path, const std::string& tiktoken_conf,
     // __________________________________________________________________________________________________________
     utils::set_seed(42);
     // Training params.
+    int total_batch_size = 524288; // 2^19, ~0.5M in number of tokens (from GPT paper)
     int batch_size = 1;
     int step = 0;
     int max_steps = 50;
@@ -132,9 +134,10 @@ void GPT_trainer(const std::string& data_path, const std::string& tiktoken_conf,
     float eps = 1e-8;
     float weight_decay = 0.1;
 
-    // Flop calculation param.
-    float num_tokens = batch_size * config->context_win_size;
-
+    // Flop calculation, gradient accumulation params
+    int num_tokens = batch_size * config->context_win_size;
+    assert(total_batch_size%num_tokens == 0);
+    int grad_accum_steps = total_batch_size/num_tokens;
     // __________________________________________________________________________________________________________
     // Data parsing, input data tensor creation
     // __________________________________________________________________________________________________________
@@ -151,9 +154,11 @@ void GPT_trainer(const std::string& data_path, const std::string& tiktoken_conf,
     // __________________________________________________________________________________________________________
     // GPT model construction.
     // __________________________________________________________________________________________________________
+
     GPT model(*config);
     model.to(run_device);
     model.train();
+    std::cout<<"[INFO]  GPT2 model created."<<std::endl;
 
     // Learning rate scheduler
     trainer::lr_scheduler lr_scheduler(max_lr, min_lr, warmup_steps, max_steps);
@@ -161,7 +166,7 @@ void GPT_trainer(const std::string& data_path, const std::string& tiktoken_conf,
     // Optimizer
     //torch::optim::AdamW optimizer(model.parameters(), torch::optim::AdamWOptions(max_lr).betas({beta1, beta2}).eps(eps).weight_decay(weight_decay_factor));
     auto optimizer = model.configure_optimizers(weight_decay, max_lr, beta1, beta2, eps);
-
+    std::cout<<"[INFO]  Total desired batch size: "<<total_batch_size<<" => Caculated gradient accumulation steps: "<<grad_accum_steps<<std::endl;   
     // __________________________________________________________________________________________________________
     // Training loop
     // => Make sure to set a reasonalbe batch_size. At least 8GB VRAM on CUDA device seems necessary.
@@ -169,36 +174,44 @@ void GPT_trainer(const std::string& data_path, const std::string& tiktoken_conf,
     std::cout<<"[INFO]  Training started....."<<std::endl;
     std::cout<<"_________________________________________________________________________________________"<<std::endl;
     while(step < max_steps){
+        torch::Tensor accumulated_loss = torch::zeros({1}, torch::kFloat).to(run_device);
         auto t0 = std::chrono::high_resolution_clock::now();
 
-        // Create batch
-        torch::Tensor x_train, y_train;
-        preprocessing::create_batch(batch_size, config->context_win_size, train_data, x_train, y_train);
-
-        // Forward propagation, with automatic mixed precision for speed gain.
-        // If the CUDA architecture supports FP16, this should speed up with half-precision.
-        // If you have Ampere architecture, BF16 (16bit) w/o gradient scaling necessity,
-        // TF32 (19bits) are supported but I haven't tested to see if libTorch supports it.
-        // Use the at::autocast with caution if the architecture only support FP16, in which case gradeint scaling is necessary,
-        // especially if there are known vanishing gradient issues.
-        // However, LibTorch doesn't have built-in gradient scaler yet.
-        // TODO: If TF32/BF16 mixed precision are supported, or gradient scaler is available for FP16,
-        // {
-        //  at::autocast::set_enabled(true);
-        //  auto logits = model.forward(x_train);
-        //  auto loss = torch::nn::functional::cross_entropy(logits.view({-1, logits.size(2)}), y_train.view({-1}));
-        //  at::autocast::clear_cache();
-        //  at::autocast::set_enabled(false);
-        //}
-        auto logits = model.forward(x_train);
-
-        // logits [B, T, C], y_train [B, T]
-        // loss is calculated over C dim, and B,T dims are combined.
-        auto loss = torch::nn::functional::cross_entropy(logits.view({-1, logits.size(2)}), y_train.view({-1}));
-
-        // Backward propagation
         optimizer->zero_grad();
-        loss.backward();
+
+        for(int grad_step=0; grad_step<grad_accum_steps; ++grad_step){
+            // Create batch
+            torch::Tensor x_train, y_train;
+            preprocessing::create_batch(batch_size, config->context_win_size, train_data, x_train, y_train);
+
+            // Forward propagation, with automatic mixed precision for speed gain.
+            // If the CUDA architecture supports FP16, this should speed up with half-precision.
+            // If you have Ampere architecture, BF16 (16bit) w/o gradient scaling necessity,
+            // TF32 (19bits) are supported but I haven't tested to see if libTorch supports it.
+            // Use the at::autocast with caution if the architecture only support FP16, in which case gradeint scaling is necessary,
+            // especially if there are known vanishing gradient issues.
+            // However, LibTorch doesn't have built-in gradient scaler yet.
+            // TODO: If TF32/BF16 mixed precision are supported, or gradient scaler is available for FP16,
+            // {
+            //  at::autocast::set_enabled(true);
+            //  auto logits = model.forward(x_train);
+            //  auto loss = torch::nn::functional::cross_entropy(logits.view({-1, logits.size(2)}), y_train.view({-1}));
+            //  at::autocast::clear_cache();
+            //  at::autocast::set_enabled(false);
+            //  loss /= float(grad_accum_steps);
+            //}
+            auto logits = model.forward(x_train);
+
+            // logits [B, T, C], y_train [B, T]
+            // loss is calculated over C dim, and B,T dims are combined.
+            auto loss = torch::nn::functional::cross_entropy(logits.view({-1, logits.size(2)}), y_train.view({-1}));
+            loss /= float(grad_accum_steps);
+            accumulated_loss += loss.detach();
+
+            // Backward propagation
+            loss.backward();
+        }
+
         // global grad norm clipping at 1.0
         torch::nn::utils::clip_grad_norm_(model.parameters(), 1.0);
 
@@ -216,8 +229,8 @@ void GPT_trainer(const std::string& data_path, const std::string& tiktoken_conf,
         std::chrono::duration<float, std::milli> elapsed = t1 - t0;
         float duration = elapsed.count();
 
-        std::cout<<"[INFO]  Step "<<step<<", lr = "<<curr_lr<<", loss = "<<loss.item<float>()<<", Elapsed = "<<duration<<
-                   "(ms), Processed tokens = "<<num_tokens/(duration/1000)<<"(tok/sec)"<<std::endl;
+        std::cout<<"[INFO]  Step "<<step<<", lr = "<<curr_lr<<", loss = "<<accumulated_loss.item<float>()<<", Elapsed = "<<
+                 duration<<"(ms), Processed tokens = "<<float(num_tokens*grad_accum_steps)/(duration/1000)<<"(tok/sec)"<<std::endl;
         step++;
     }
     std::cout<<"_________________________________________________________________________________________"<<std::endl;
