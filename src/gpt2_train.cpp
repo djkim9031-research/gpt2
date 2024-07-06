@@ -85,6 +85,7 @@ void GPT_trainer(const std::string& data_path, const std::string& tiktoken_conf,
     // Optimizer
     torch::optim::AdamW optimizer(model.parameters(), torch::optim::AdamWOptions(learning_rate));
 
+
     // __________________________________________________________________________________________________________
     // Training loop
     // => Make sure to set a reasonalbe batch_size. At least 8GB VRAM on CUDA device seems necessary.
@@ -99,10 +100,22 @@ void GPT_trainer(const std::string& data_path, const std::string& tiktoken_conf,
         preprocessing::create_batch(batch_size, config->context_win_size, train_data, x_train, y_train);
 
         // Forward propagation, with automatic mixed precision for speed gain.
-        at::autocast::set_enabled(true);
+        // If the CUDA architecture supports FP16, this should speed up with half-precision.
+        // If you have Ampere architecture, BF16 (16bit) w/o gradient scaling necessity,
+        // TF32 (19bits) are supported but I haven't tested to see if libTorch supports it.
+        // Use the at::autocast with caution if the architecture only support FP16, in which case gradeint scaling is necessary,
+        // especially if there are known vanishing gradient issues.
+        // However, LibTorch doesn't have built-in gradient scaler yet.
+        // TODO: If TF32/BF16 mixed precision are supported, or gradient scaler is available for FP16,
+        // {
+        //  at::autocast::set_enabled(true);
+        //  auto logits = model.forward(x_train);
+        //  auto loss = torch::nn::functional::cross_entropy(logits.view({-1, logits.size(2)}), y_train.view({-1}));
+        //  at::autocast::clear_cache();
+        //  at::autocast::set_enabled(false);
+        //}
         auto logits = model.forward(x_train);
-        at::autocast::clear_cache();
-        at::autocast::set_enabled(false);
+
         // logits [B, T, C], y_train [B, T]
         // loss is calculated over C dim, and B,T dims are combined.
         auto loss = torch::nn::functional::cross_entropy(logits.view({-1, logits.size(2)}), y_train.view({-1}));
