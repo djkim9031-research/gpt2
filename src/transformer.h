@@ -40,18 +40,30 @@ class CausalSelfAttention : public torch::nn::Module {
             k = k.view({B, T, n_heads, C/n_heads}).transpose(1, 2); // B, nh, T, hs
             v = v.view({B, T, n_heads, C/n_heads}).transpose(1, 2); // B, nh, T, hs
 
+            /* Vanilla weight calculation
             // Attention weight calculation
             auto w = torch::matmul(q, k.transpose(-2, -1)) * (1.0 / std::sqrt(k.size(-1)));
             // Same logic as bias[:, :, :T, :T] in python
             w = w.masked_fill(bias.index({torch::indexing::Slice(), torch::indexing::Slice(), torch::indexing::Slice(0, T), torch::indexing::Slice(0, T)}) == 0, -INFINITY);
             w = torch::nn::functional::softmax(w, -1); // B, nh, T, T
             auto y = torch::matmul(w, v); // B, nh, T, hs
+            */
+
+            // Flash attention
+            auto y = std::get<0>(at::_scaled_dot_product_attention(/*query=*/q, /*key=*/k, /*value=*/v, 
+                                                                   /*attn_mask=*/{}, /*dropout_p=*/0.0,
+                                                                   /*need_weights=*/true, /*is_causal=*/true));
+            
 
             // Reassemble all head outputs side by side
             // B, nh, T, hs -> B, T, nh, hs -> B, T, C (nh*hs)
             y = y.transpose(1, 2).contiguous().view({B, T, C});
             return c_proj->forward(y);
         }
+
+    private: 
+        c10::optional<at::Tensor> _opt = torch::nullopt;
+
 };
 
 class MLP : public torch::nn::Module {
