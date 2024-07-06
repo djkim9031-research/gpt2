@@ -67,6 +67,12 @@ class GPT : public torch::nn::Module{
                                                      const int max_generation_length, 
                                                      const torch::Device& device);
 
+        torch::optim::Optimizer* configure_optimizers(const float weight_decay,
+                                                      const float learning_rate,
+                                                      const float beta1,
+                                                      const float beta2,
+                                                      const float eps);
+
     private:
 
         // Weight initalization scheme

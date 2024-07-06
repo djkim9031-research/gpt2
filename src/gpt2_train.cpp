@@ -4,6 +4,63 @@
 #include <chrono>
 #include <ATen/autocast_mode.h>
 
+torch::optim::Optimizer* GPT::configure_optimizers(const float weight_decay,
+                                                   const float learning_rate,
+                                                   const float beta1,
+                                                   const float beta2,
+                                                   const float eps){
+    // Get all trainable parameters.
+    auto params = this->parameters();
+
+    // Separate parameters into groups based on dimensionality
+    // Any params with 2D or above will be weight decayed, otherwise they won't.
+    // i.e., all weight tensors with matmults + embeddings will decay, while biases and layernorms won't
+    std::vector<torch::Tensor> decay_params;
+    std::vector<torch::Tensor> nodecay_params;
+    for (const auto& param : params) {
+        if (param.requires_grad()) {
+            if (param.dim() >= 2) {
+                decay_params.push_back(param);
+            } else {
+                nodecay_params.push_back(param);
+            }
+        }
+    }
+
+    // Print information about parameter groups
+    int num_decay_params = 0;
+    for (const auto& p : decay_params) {
+        num_decay_params += p.numel();
+    }
+    int num_nodecay_params = 0;
+    for (const auto& p : nodecay_params) {
+        num_nodecay_params += p.numel();
+    }
+    std::cout << "[INFO]  Number of decayed parameter tensors: " << decay_params.size()
+              << ", with " << num_decay_params << " parameters\n";
+    std::cout << "[INFO]  Number of non-decayed parameter tensors: " << nodecay_params.size()
+              << ", with " << num_nodecay_params << " parameters\n";
+
+    // Create optimizer groups
+    std::vector<torch::optim::OptimizerParamGroup> optim_groups;
+
+    // Weight decay group
+    std::unique_ptr<torch::optim::AdamWOptions> decay_options = std::make_unique<torch::optim::AdamWOptions>();
+    decay_options->weight_decay(weight_decay);
+    torch::optim::OptimizerParamGroup decay_group(decay_params, std::move(decay_options));
+    optim_groups.push_back(decay_group);
+
+    // No decay group
+    std::unique_ptr<torch::optim::AdamWOptions> nodecay_options = std::make_unique<torch::optim::AdamWOptions>();
+    nodecay_options->weight_decay(0.0);
+    torch::optim::OptimizerParamGroup nodecay_group(nodecay_params, std::move(nodecay_options));
+    optim_groups.push_back(nodecay_group);
+
+    // Create optimizer with customized optim groups
+    torch::optim::Optimizer* optimizer = new torch::optim::AdamW(optim_groups, torch::optim::AdamWOptions(learning_rate).betas({beta1, beta2}).eps(eps));
+    return optimizer;
+}
+
 void GPT::_init_weights(torch::nn::Module& curr_module, const std::string& curr_module_name){
     if(auto linear = dynamic_cast<torch::nn::LinearImpl*>(&curr_module)){
             float std = 0.02;
@@ -73,6 +130,7 @@ void GPT_trainer(const std::string& data_path, const std::string& tiktoken_conf,
     float beta1 = 0.9;
     float beta2 = 0.95;
     float eps = 1e-8;
+    float weight_decay = 0.1;
 
     // Flop calculation param.
     float num_tokens = batch_size * config->context_win_size;
@@ -101,7 +159,8 @@ void GPT_trainer(const std::string& data_path, const std::string& tiktoken_conf,
     trainer::lr_scheduler lr_scheduler(max_lr, min_lr, warmup_steps, max_steps);
 
     // Optimizer
-    torch::optim::AdamW optimizer(model.parameters(), torch::optim::AdamWOptions(max_lr).betas({beta1, beta2}).eps(eps));
+    //torch::optim::AdamW optimizer(model.parameters(), torch::optim::AdamWOptions(max_lr).betas({beta1, beta2}).eps(eps).weight_decay(weight_decay_factor));
+    auto optimizer = model.configure_optimizers(weight_decay, max_lr, beta1, beta2, eps);
 
     // __________________________________________________________________________________________________________
     // Training loop
@@ -138,17 +197,17 @@ void GPT_trainer(const std::string& data_path, const std::string& tiktoken_conf,
         auto loss = torch::nn::functional::cross_entropy(logits.view({-1, logits.size(2)}), y_train.view({-1}));
 
         // Backward propagation
-        optimizer.zero_grad();
+        optimizer->zero_grad();
         loss.backward();
         // global grad norm clipping at 1.0
         torch::nn::utils::clip_grad_norm_(model.parameters(), 1.0);
 
         // Learning rate update
         float curr_lr = lr_scheduler.get_lr(step);
-        for (auto param_group : optimizer.param_groups()) {
+        for (auto param_group : optimizer->param_groups()) {
             static_cast<torch::optim::AdamWOptions&>(param_group.options()).lr(curr_lr);
         }
-        optimizer.step();
+        optimizer->step();
 
         if(torch::cuda::is_available()){
             torch::cuda::synchronize();
