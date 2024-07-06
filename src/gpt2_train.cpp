@@ -39,7 +39,7 @@ void GPT_trainer(const std::string& data_path, const std::string& tiktoken_conf,
     std::unique_ptr<GPTConfig> config{nullptr};
 
     if(gpt_model == "gpt2"){
-        // Original gpt2's context_win_size = 50257, but making it 2's exp helps CUDA kernel resource allocation.
+        // Original gpt2's context_win_size = 50257, but making it 2's exp help CUDA kernel resource allocation.
         config = std::make_unique<GPTConfig>(1024, 50304, 12, 12, 768); // 124M params
         std::cout<<"[INFO]  GPT2 model config generated."<<std::endl;
     } else if (gpt_model == "gpt2-medium"){
