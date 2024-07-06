@@ -55,15 +55,26 @@ void GPT_trainer(const std::string& data_path, const std::string& tiktoken_conf,
         throw std::invalid_argument(gpt_model+" does not exist. Try one of [gpt2, gpt2-medium, gpt2-large, gpt2-xl]");
     }
 
-    // Set hyperparameters
+    // __________________________________________________________________________________________________________
+    // Set hyperparameters.
+    // __________________________________________________________________________________________________________
     utils::set_seed(42);
+    // Training params.
     int batch_size = 1;
-    int step = 1;
-    int max_steps = 10;
-    float learning_rate = 3e-4;
+    int step = 0;
+    int max_steps = 50;
+
+    // Learning rate decay params.
+    float max_lr = 6e-4;
+    float min_lr = max_lr*0.1;
+    int warmup_steps = 10;
+
+    // Adam optimizer params.
     float beta1 = 0.9;
     float beta2 = 0.95;
     float eps = 1e-8;
+
+    // Flop calculation param.
     float num_tokens = batch_size * config->context_win_size;
 
     // __________________________________________________________________________________________________________
@@ -86,8 +97,11 @@ void GPT_trainer(const std::string& data_path, const std::string& tiktoken_conf,
     model.to(run_device);
     model.train();
 
+    // Learning rate scheduler
+    trainer::lr_scheduler lr_scheduler(max_lr, min_lr, warmup_steps, max_steps);
+
     // Optimizer
-    torch::optim::AdamW optimizer(model.parameters(), torch::optim::AdamWOptions(learning_rate).betas({beta1, beta2}).eps(eps));
+    torch::optim::AdamW optimizer(model.parameters(), torch::optim::AdamWOptions(max_lr).betas({beta1, beta2}).eps(eps));
 
     // __________________________________________________________________________________________________________
     // Training loop
@@ -128,6 +142,12 @@ void GPT_trainer(const std::string& data_path, const std::string& tiktoken_conf,
         loss.backward();
         // global grad norm clipping at 1.0
         torch::nn::utils::clip_grad_norm_(model.parameters(), 1.0);
+
+        // Learning rate update
+        float curr_lr = lr_scheduler.get_lr(step);
+        for (auto param_group : optimizer.param_groups()) {
+            static_cast<torch::optim::AdamWOptions&>(param_group.options()).lr(curr_lr);
+        }
         optimizer.step();
 
         if(torch::cuda::is_available()){
@@ -137,7 +157,7 @@ void GPT_trainer(const std::string& data_path, const std::string& tiktoken_conf,
         std::chrono::duration<float, std::milli> elapsed = t1 - t0;
         float duration = elapsed.count();
 
-        std::cout<<"[INFO]  Step "<<step<<", loss = "<<loss.item<float>()<<", Elapsed = "<<duration<<
+        std::cout<<"[INFO]  Step "<<step<<", lr = "<<curr_lr<<", loss = "<<loss.item<float>()<<", Elapsed = "<<duration<<
                    "(ms), Processed tokens = "<<num_tokens/(duration/1000)<<"(tok/sec)"<<std::endl;
         step++;
     }

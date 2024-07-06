@@ -10,6 +10,8 @@
 #include <vector>
 #include <algorithm>
 #include <random>
+#include <cmath>
+#include <math.h>
 
 #include "sw/tokenizer/tiktoken.h"
 
@@ -151,6 +153,33 @@ namespace preprocessing {
         batch_input = torch::stack(x_vec);
         batch_output = torch::stack(y_vec);
     }
+}
+
+namespace trainer {
+
+    struct lr_scheduler{
+        float max_lr;
+        float min_lr;
+        int warmup_steps;
+        int max_steps;
+
+        lr_scheduler(float max_lr, float min_lr, int warmup_steps, int max_steps)
+            : max_lr(max_lr), min_lr(min_lr), warmup_steps(warmup_steps), max_steps(max_steps) {}
+
+        float get_lr(int curr_step){
+            if(curr_step < warmup_steps){
+                // 1. Linear warmup up to warmup_steps
+                return max_lr * float(curr_step + 1)/float(warmup_steps);
+            } else if (curr_step > max_steps){
+                // 2. For beyond defined max_steps, return min_lr
+                return min_lr;
+            }
+            // 3. For cases in between, use cosine decay down to min_lr
+            float decay_ratio = float(curr_step - warmup_steps)/float(max_steps - warmup_steps); //[0, 1]
+            float coeff = 0.5*(1.0 + std::cos(M_PI*decay_ratio));
+            return min_lr + coeff*(max_lr - min_lr);
+        }
+    };
 }
 
 namespace pretrained {
