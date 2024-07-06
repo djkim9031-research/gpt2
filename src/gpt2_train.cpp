@@ -39,16 +39,17 @@ void GPT_trainer(const std::string& data_path, const std::string& tiktoken_conf,
     std::unique_ptr<GPTConfig> config{nullptr};
 
     if(gpt_model == "gpt2"){
-        config = std::make_unique<GPTConfig>(1024, 50257, 12, 12, 768); // 124M params
+        // Original gpt2's context_win_size = 50257, but making it 2's exp helps CUDA kernel resource allocation.
+        config = std::make_unique<GPTConfig>(1024, 50304, 12, 12, 768); // 124M params
         std::cout<<"[INFO]  GPT2 model config generated."<<std::endl;
     } else if (gpt_model == "gpt2-medium"){
-        config = std::make_unique<GPTConfig>(1024, 50257, 24, 16, 1024); // 350M params
+        config = std::make_unique<GPTConfig>(1024, 50304, 24, 16, 1024); // 350M params
         std::cout<<"[INFO]  GPT2-medium model config generated."<<std::endl;
     } else if (gpt_model == "gpt2-large"){
-        config = std::make_unique<GPTConfig>(1024, 50257, 36, 20, 1280); // 774M params
+        config = std::make_unique<GPTConfig>(1024, 50304, 36, 20, 1280); // 774M params
         std::cout<<"[INFO]  GPT2-large model config generated."<<std::endl;
     } else if (gpt_model == "gpt2-xl"){
-        config = std::make_unique<GPTConfig>(1024, 50257, 48, 25, 1600); // 1.558B params
+        config = std::make_unique<GPTConfig>(1024, 50304, 48, 25, 1600); // 1.558B params
         std::cout<<"[INFO]  GPT2-xl model config generated."<<std::endl;
     } else{
         throw std::invalid_argument(gpt_model+" does not exist. Try one of [gpt2, gpt2-medium, gpt2-large, gpt2-xl]");
