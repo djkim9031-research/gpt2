@@ -42,9 +42,9 @@ int main(int argc, char **argv) {
             break;
         }
     }
-    
 
     if(mode == "train"){
+        MPI_Init(&argc, &argv);
         GPT_trainer("../data/input.txt", tiktoken_conf, gpt_model);
 
     } else if(mode == "test"){

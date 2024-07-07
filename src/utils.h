@@ -15,6 +15,8 @@
 
 #include "sw/tokenizer/tiktoken.h"
 
+#include "mpi.h"
+
 namespace utils {
     // Extract the layer index from "h.layer_idx" form in hugging face weight pt file.
     inline int extract_layer_num(const std::string& input_string) {
@@ -93,9 +95,12 @@ namespace tokenizer {
 namespace preprocessing {
 
     // Preprocessing function - parse the data from the given .txt
+    // Split the entire dataset into equal-sized chunks based on running number of processes
     // and returns the tiktoken encoding tensors.
     inline torch::Tensor data_parser(const std::string& data_path,
                                      const tokenizer::tiktoken& tokenizer,
+                                     const int process_rank,
+                                     const int world_size,
                                      const torch::Device& device){
         
         // Read the content of the file
@@ -108,8 +113,14 @@ namespace preprocessing {
         std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
         file.close();
 
+        size_t total_text_size = text.size();
+        size_t text_chunk_size = total_text_size / world_size;
+        int start_idx = process_rank * text_chunk_size;
+        int end_idx = (process_rank + 1) == world_size ? total_text_size : (process_rank + 1) * text_chunk_size;
+        std::string split_text = text.substr(start_idx, end_idx - start_idx);
+
         // Encode the strings to tokens.
-        std::vector<int64_t> encoded_vec = tokenizer.encode(text);
+        std::vector<int64_t> encoded_vec = tokenizer.encode(split_text);
         torch::Tensor tokens = torch::tensor(encoded_vec, torch::kLong).to(device);
 
         return tokens;
@@ -180,6 +191,44 @@ namespace trainer {
             return min_lr + coeff*(max_lr - min_lr);
         }
     };
+
+    // Distributed data parallel pipeline setup.
+    // TorchLib does not currently support python's torch.distributed.
+    // This function is created to simulate the similar training logic by spawning multi-processes on CPU.
+    // TODO: write MPI calls to detect CUDA devices and allocate memory for CUDA kernels.
+    inline bool ddp_pipeline_setup(int& rank, int& world_size){
+        MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+        MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+        bool master_process = (rank == 0);
+        std::cout<<"Initialized rank: "<<rank<<" out of "<<world_size<<std::endl;
+        return master_process;
+    }
+
+    inline void ddp_pipeline_cleanup(){
+        MPI_Finalize();
+    }
+
+    inline torch::Tensor collect_local_gradients(const torch::nn::Module& model){
+        std::vector<torch::Tensor> grads;
+        for(const auto& param : model.parameters()){
+            if(param.grad().defined()){
+                grads.push_back(param.grad().view(-1));
+            }
+        }
+        return torch::cat(grads);
+    }
+
+    inline void update_gradients(torch::nn::Module& model, const torch::Tensor& grads){
+        int64_t index = 0;
+        for(auto& param : model.parameters()){
+            if(param.grad().defined()){
+                auto grad = param.grad().view(-1);
+                grad.copy_(grads.slice(0, index, index + grad.numel()));
+                index += grad.numel();
+            }
+        }
+    }
 }
 
 namespace pretrained {
